@@ -52,6 +52,7 @@ def create_task(
                     User.deleted_at.is_(None)
                 )
             )
+            .with_for_update()
         )
 
         if membership is None:
@@ -205,7 +206,26 @@ def assign_task(
         current_user
     )
 
-    # 2. Retrieve and lock the task
+    # 2. Verify the assignee is an active project member
+    new_assignee = db.scalar(
+        select(ProjectMember)
+        .where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == assignment_data.assignee_id,
+            ProjectMember.user.has(
+                User.deleted_at.is_(None)
+            )
+        )
+        .with_for_update()
+    )
+
+    if new_assignee is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assignee must be an active member of this project"
+        )
+
+    # 3. Retrieve and lock the task
     task = db.scalar(
         select(Task)
         .where(
@@ -219,24 +239,6 @@ def assign_task(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Task not found"
-        )
-
-    # 3. Verify the assignee is an active project member
-    new_assignee = db.scalar(
-        select(ProjectMember)
-        .where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == assignment_data.assignee_id,
-            ProjectMember.user.has(
-                User.deleted_at.is_(None)
-            )
-        )
-    )
-
-    if new_assignee is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Assignee must be an active member of this project"
         )
 
     # 4. Check whether the task is already assigned to this user
