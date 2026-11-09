@@ -6,6 +6,7 @@ from sqlalchemy import text
 from app.database.database import get_db
 
 from app.routers.project_router import router as project_router
+from app.routers.auth_router import router as auth_router
 
 app = FastAPI(
     title="TaskFlow API",
@@ -31,3 +32,4 @@ def check_database(db: Session = Depends(get_db)):
     }
 
 app.include_router(project_router)
+app.include_router(auth_router)

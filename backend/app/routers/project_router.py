@@ -8,7 +8,7 @@ from app.models import User
 from app.schemas.project_schema import TransferOwnershipRequest
 from app.services.project_service import transfer_project_ownership
 
-from app.core.security import get_current_user
+from app.core.dependencies import get_current_user
 
 
 router = APIRouter(
