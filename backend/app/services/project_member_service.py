@@ -142,7 +142,7 @@ def remove_project_member(
     project_id: UUID,
     member_user_id: UUID,
     current_user: User
-) -> None:
+) -> UUID:
 
     # 1. Verify that the current user owns the project
     verify_project_owner(
@@ -222,6 +222,8 @@ def remove_project_member(
 
         # 8. Commit all changes together
         db.commit()
+
+        return member_user_id
 
     except Exception:
         db.rollback()

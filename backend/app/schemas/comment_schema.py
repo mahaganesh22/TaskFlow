@@ -1,5 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from datetime import datetime
+from uuid import UUID
+
 
 class CommentCreateRequest(BaseModel):
 
@@ -17,3 +20,14 @@ class CommentCreateRequest(BaseModel):
             raise ValueError("Comment cannot be empty")
 
         return value
+
+
+class CommentResponse(BaseModel):
+    id: UUID
+    content: str
+    task_id: UUID
+    user_id: UUID
+    author_name: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

@@ -24,7 +24,7 @@ def create_task(
 ) -> Task:
 
     # 1. Verify that the current user owns the project
-    verify_project_owner(
+    verify_project_member(
         db,
         project_id,
         current_user
@@ -128,7 +128,7 @@ def update_task_details(
 ) -> Task:
 
     # 1. Verify project ownership
-    verify_project_owner(
+    verify_project_member(
         db,
         project_id,
         current_user
@@ -196,10 +196,10 @@ def assign_task(
     task_id: UUID,
     current_user: User,
     assignment_data: TaskAssignmentRequest
-) -> Task:
+) -> tuple[Task, UUID | None]:
 
     # 1. Verify project ownership
-    verify_project_owner(
+    verify_project_member(
         db,
         project_id,
         current_user
@@ -277,7 +277,7 @@ def assign_task(
 
         db.refresh(task)
 
-        return task
+        return task, old_assignee_id
 
     except Exception:
         db.rollback()
@@ -290,7 +290,7 @@ def update_task_status(
     task_id: UUID,
     current_user: User,
     status_data: TaskStatusUpdateRequest
-) -> Task:
+) -> tuple[Task, bool]:
 
     # 1. Retrieve the task and lock it for this transaction
     task = db.scalar(
@@ -315,7 +315,7 @@ def update_task_status(
 
     # 3. Avoid creating duplicate activity for an unchanged status
     if task.status == new_status:
-        return task
+        return task, False
 
     old_status = task.status
 
@@ -347,7 +347,7 @@ def update_task_status(
         db.commit()
         db.refresh(task)
 
-        return task
+        return task, True
 
     except Exception:
         db.rollback()
@@ -359,10 +359,10 @@ def delete_task(
     project_id: UUID,
     task_id: UUID,
     current_user: User
-) -> None:
+) -> UUID | None:
 
     # 1. Verify that the current user owns the project
-    verify_project_owner(
+    verify_project_member(
         db,
         project_id,
         current_user
@@ -385,11 +385,15 @@ def delete_task(
         )
 
     try:
+        assignee_id = task.assignee_id
+
         # 3. Delete the task
         db.delete(task)
 
         # 4. Commit the deletion
         db.commit()
+
+        return assignee_id
 
     except Exception:
         db.rollback()

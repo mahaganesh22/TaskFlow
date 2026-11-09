@@ -2,7 +2,7 @@
 from uuid import UUID
 from typing import Literal
 
-from fastapi import APIRouter, Depends, status, Response, Query
+from fastapi import APIRouter, Depends, status, Response, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
@@ -21,6 +21,7 @@ from app.schemas.task_schema import (
     TaskStatusUpdateRequest
 )
 
+from app.core.websocket_manager import manager
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/tasks",
@@ -35,15 +36,39 @@ router = APIRouter(
 def create_task(
     project_id: UUID,
     task_data: TaskCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return task_service.create_task(
+    task = task_service.create_task(
         db,
         project_id,
         current_user,
         task_data
     )
+
+    background_tasks.add_task(
+        manager.broadcast_to_project,
+        project_id,
+        {
+            "type": "TASK_CREATED",
+            "project_id": str(project_id),
+            "task_id": str(task.id)
+        }
+    )
+
+    if task.assignee_id:
+        background_tasks.add_task(
+            manager.send_to_user,
+            task.assignee_id,
+            {
+                "type": "ASSIGNED_TASKS_CHANGED",
+                "project_id": str(project_id),
+                "task_id": str(task.id)
+            }
+        )
+
+    return task
 
 
 
@@ -107,12 +132,29 @@ def update_task(
     project_id: UUID,
     task_id: UUID,
     task_data: TaskUpdateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return task_service.update_task_details(
-        db, project_id, task_id, current_user, task_data
+    task = task_service.update_task_details(
+        db,
+        project_id,
+        task_id,
+        current_user,
+        task_data
     )
+
+    background_tasks.add_task(
+        manager.broadcast_to_project,
+        project_id,
+        {
+            "type": "TASK_UPDATED",
+            "project_id": str(project_id),
+            "task_id": str(task.id)
+        }
+    )
+
+    return task
 
 
 # ASSIGN task
@@ -124,12 +166,47 @@ def assign_task(
     project_id: UUID,
     task_id: UUID,
     assignment_data: TaskAssignmentRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return task_service.assign_task(
-        db, project_id, task_id, current_user, assignment_data
+    task, old_assignee_id = task_service.assign_task(
+        db,
+        project_id,
+        task_id,
+        current_user,
+        assignment_data
     )
+
+    background_tasks.add_task(
+        manager.broadcast_to_project,
+        project_id,
+        {
+            "type": "TASK_ASSIGNED",
+            "project_id": str(project_id),
+            "task_id": str(task.id),
+            "assignee_id": str(task.assignee_id)
+        }
+    )
+
+    affected_users = {
+        user_id
+        for user_id in (old_assignee_id, task.assignee_id)
+        if user_id is not None
+    }
+
+    for user_id in affected_users:
+        background_tasks.add_task(
+            manager.send_to_user,
+            user_id,
+            {
+                "type": "ASSIGNED_TASKS_CHANGED",
+                "project_id": str(project_id),
+                "task_id": str(task.id)
+            }
+        )
+
+    return task
 
 
 # UPDATE task status
@@ -141,12 +218,31 @@ def update_task_status(
     project_id: UUID,
     task_id: UUID,
     status_data: TaskStatusUpdateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return task_service.update_task_status(
-        db, project_id, task_id, current_user, status_data
+    task, changed = task_service.update_task_status(
+        db,
+        project_id,
+        task_id,
+        current_user,
+        status_data
     )
+
+    if changed:
+        background_tasks.add_task(
+            manager.broadcast_to_project,
+            project_id,
+            {
+                "type": "TASK_STATUS_CHANGED",
+                "project_id": str(project_id),
+                "task_id": str(task.id),
+                "status": task.status
+            }
+        )
+
+    return task
 
 
 # DELETE task
@@ -158,12 +254,37 @@ def update_task_status(
 def delete_task(
     project_id: UUID,
     task_id: UUID,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    task_service.delete_task(
-        db, project_id, task_id, current_user
+    assignee_id = task_service.delete_task(
+        db,
+        project_id,
+        task_id,
+        current_user
     )
+
+    background_tasks.add_task(
+        manager.broadcast_to_project,
+        project_id,
+        {
+            "type": "TASK_DELETED",
+            "project_id": str(project_id),
+            "task_id": str(task_id)
+        }
+    )
+
+    if assignee_id:
+        background_tasks.add_task(
+            manager.send_to_user,
+            assignee_id,
+            {
+                "type": "ASSIGNED_TASKS_CHANGED",
+                "project_id": str(project_id),
+                "task_id": str(task_id)
+            }
+        )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

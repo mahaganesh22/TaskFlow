@@ -12,6 +12,8 @@ from app.routers.project_member_router import (
 )
 from app.routers import task_router
 from app.routers import my_task_router
+from app.routers import websocket_router
+from app.routers import comment_router
 
 app = FastAPI(
     title="TaskFlow API",
@@ -41,3 +43,5 @@ app.include_router(project_router)
 app.include_router(project_member_router)
 app.include_router(task_router.router)
 app.include_router(my_task_router.router)
+app.include_router(websocket_router.router)
+app.include_router(comment_router.router)

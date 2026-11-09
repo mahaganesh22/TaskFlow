@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import User, Task, Comment, ActivityLog
 from app.schemas.comment_schema import CommentCreateRequest
@@ -100,6 +100,7 @@ def get_task_comments(
     comments = db.scalars(
         select(Comment)
         .where(Comment.task_id == task_id)
+        .options(selectinload(Comment.author))
         .order_by(Comment.created_at.asc())
     ).all()
 
