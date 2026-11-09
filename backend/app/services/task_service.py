@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, func, case
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -14,8 +14,7 @@ from app.models import (
 
 from app.schemas.task_schema import TaskCreateRequest, TaskUpdateRequest, TaskAssignmentRequest, TaskStatusUpdateRequest
 
-from app.services.authorization_service import verify_project_owner, verify_task_assignee_or_owner
-
+from app.services.authorization_service import verify_project_owner, verify_task_assignee_or_owner, verify_project_member
 
 def create_task(
     db: Session,
@@ -395,3 +394,161 @@ def delete_task(
     except Exception:
         db.rollback()
         raise
+
+
+
+def get_project_tasks(
+    db: Session,
+    project_id: UUID,
+    current_user: User,
+    priority: str | None,
+    assignee_id: UUID | None,
+    search: str | None,
+    sort_by: str,
+    sort_order: str,
+    limit: int,
+    offset: int
+):
+    # 1. Verify project membership
+    verify_project_member(db, project_id, current_user)
+
+    # 2. Build filters
+    filters = [Task.project_id == project_id]
+
+    if priority:
+        filters.append(Task.priority == priority)
+
+    if assignee_id:
+        filters.append(Task.assignee_id == assignee_id)
+
+    if search:
+        filters.append(Task.title.ilike(f"%{search}%"))
+
+    # 3. Calculate total matching tasks BEFORE pagination
+    total = db.scalar(
+        select(func.count(Task.id)).where(*filters)
+    )
+
+    # 4. Build the task query
+    query = select(Task).where(*filters)
+
+    # 5. Determine sorting column
+    if sort_by == "priority":
+        sort_column = case(
+            (Task.priority == "HIGH", 3),
+            (Task.priority == "MEDIUM", 2),
+            (Task.priority == "LOW", 1),
+            else_=0
+        )
+    else:
+        sort_column = {
+            "due_date": Task.due_date,
+            "created_at": Task.created_at
+        }[sort_by]
+
+    # 6. Apply sorting
+    if sort_order == "asc":
+        ordering = sort_column.asc()
+    else:
+        ordering = sort_column.desc()
+
+    if sort_by == "due_date":
+        ordering = ordering.nulls_last()
+
+    query = query.order_by(ordering, Task.id.asc())
+
+    # 7. Apply pagination
+    query = query.limit(limit).offset(offset)
+
+    tasks = db.scalars(query).all()
+
+    # 8. Return paginated response data
+    return {
+        "items": tasks,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+
+def get_task_by_id(
+    db: Session,
+    project_id: UUID,
+    task_id: UUID,
+    current_user: User
+) -> Task:
+
+    # Verify project membership
+    verify_project_member(db, project_id, current_user)
+
+    task = db.scalar(
+        select(Task).where(
+            Task.id == task_id,
+            Task.project_id == project_id
+        )
+    )
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+
+    return task
+
+
+
+def get_assigned_tasks(
+    db: Session,
+    current_user: User,
+    status: str | None,
+    priority: str | None,
+    limit: int,
+    offset: int
+):
+    # 1. Build the base filters
+    filters = [
+        Task.assignee_id == current_user.id,
+        ProjectMember.user_id == current_user.id,
+        ProjectMember.user.has(User.deleted_at.is_(None))
+    ]
+
+    # 2. Apply optional filters
+    if status:
+        filters.append(Task.status == status)
+
+    if priority:
+        filters.append(Task.priority == priority)
+
+    # 3. Count matching tasks
+    total = db.scalar(
+        select(func.count(Task.id))
+        .join(
+            ProjectMember,
+            ProjectMember.project_id == Task.project_id
+        )
+        .where(*filters)
+    ) or 0
+
+    # 4. Retrieve matching tasks
+    query = (
+        select(Task)
+        .join(
+            ProjectMember,
+            ProjectMember.project_id == Task.project_id
+        )
+        .where(*filters)
+        .order_by(Task.created_at.desc(), Task.id.asc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    tasks = db.scalars(query).all()
+
+    # 5. Return paginated response
+    return {
+        "items": tasks,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }

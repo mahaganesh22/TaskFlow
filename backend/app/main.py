@@ -7,6 +7,11 @@ from app.database.database import get_db
 
 from app.routers.project_router import router as project_router
 from app.routers.auth_router import router as auth_router
+from app.routers.project_member_router import (
+    router as project_member_router
+)
+from app.routers import task_router
+from app.routers import my_task_router
 
 app = FastAPI(
     title="TaskFlow API",
@@ -31,5 +36,8 @@ def check_database(db: Session = Depends(get_db)):
         "database": "Connected successfully"
     }
 
-app.include_router(project_router)
 app.include_router(auth_router)
+app.include_router(project_router)
+app.include_router(project_member_router)
+app.include_router(task_router.router)
+app.include_router(my_task_router.router)
