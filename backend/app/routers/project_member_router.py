@@ -105,15 +105,24 @@ async def remove_project_member(
         removed_user_id
     )
 
+    event = {
+        "type": "MEMBER_REMOVED",
+        "project_id": str(project_id),
+        "user_id": str(removed_user_id)
+    }
+
     # Notify the remaining project members.
     background_tasks.add_task(
         manager.broadcast_to_project,
         project_id,
-        {
-            "type": "MEMBER_REMOVED",
-            "project_id": str(project_id),
-            "user_id": str(removed_user_id)
-        }
+        event
+    )
+
+    # Personal socket stays open so Assigned to Me can refresh.
+    background_tasks.add_task(
+        manager.send_to_user,
+        removed_user_id,
+        event
     )
 
     return {

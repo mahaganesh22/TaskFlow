@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_user
 from app.database.database import get_db
+from app.models import User
 from app.schemas.auth_schema import (
     RegisterRequest,
     LoginRequest,
@@ -15,6 +17,7 @@ from app.services.auth_service import (
     refresh_tokens,
     logout_user
 )
+from app.services.user_service import soft_delete_user
 
 
 router = APIRouter(
@@ -72,3 +75,15 @@ def logout(
     return {
         "message": "Successfully logged out"
     }
+
+
+@router.delete(
+    "/account",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    soft_delete_user(db, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

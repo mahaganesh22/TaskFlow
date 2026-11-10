@@ -11,19 +11,21 @@ class ConnectionManager:
         self.socket_users: dict[WebSocket, UUID] = {}
         self.socket_projects: dict[WebSocket, UUID] = {}
 
-    async def connect(self, websocket: WebSocket, project_id: UUID, user_id: UUID):
-        self.project_connections.setdefault(project_id, set()).add(websocket)
-        self.user_connections.setdefault(user_id, set()).add(websocket)
-
-        self.socket_users[websocket] = user_id
-        self.socket_projects[websocket] = project_id
-
-    def disconnect(
+    async def connect_project(
         self,
         websocket: WebSocket,
         project_id: UUID,
         user_id: UUID
     ):
+        self.project_connections.setdefault(project_id, set()).add(websocket)
+        self.socket_users[websocket] = user_id
+        self.socket_projects[websocket] = project_id
+
+    async def connect_user(self, websocket: WebSocket, user_id: UUID):
+        self.user_connections.setdefault(user_id, set()).add(websocket)
+        self.socket_users[websocket] = user_id
+
+    def disconnect(self, websocket: WebSocket):
         self._remove_socket(websocket)
 
     def _remove_socket(self, websocket: WebSocket):
@@ -74,16 +76,17 @@ class ConnectionManager:
             except Exception:
                 self._remove_socket(websocket)
 
-
     async def disconnect_user_from_project(
         self,
         project_id: UUID,
         user_id: UUID
     ):
-        user_sockets = list(self.user_connections.get(user_id, set()))
+        project_sockets = list(
+            self.project_connections.get(project_id, set())
+        )
 
-        for websocket in user_sockets:
-            if self.socket_projects.get(websocket) != project_id:
+        for websocket in project_sockets:
+            if self.socket_users.get(websocket) != user_id:
                 continue
 
             try:

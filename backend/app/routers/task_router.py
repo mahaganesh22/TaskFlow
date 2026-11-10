@@ -242,6 +242,17 @@ def update_task_status(
             }
         )
 
+        if task.assignee_id is not None:
+            background_tasks.add_task(
+                manager.send_to_user,
+                task.assignee_id,
+                {
+                    "type": "ASSIGNED_TASKS_CHANGED",
+                    "project_id": str(project_id),
+                    "task_id": str(task.id)
+                }
+            )
+
     return task
 
 
