@@ -1,0 +1,71 @@
+name: Deploy TaskFlow backend to Elastic Beanstalk
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: taskflow-elastic-beanstalk-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Package backend
+        run: |
+          cd backend
+          zip -r ../taskflow-backend.zip . \
+            -x "*.pyc" "__pycache__/*" ".venv/*" "venv/*" ".env" ".env.*"
+
+      - name: Upload deployment package to Elastic Beanstalk storage
+        id: upload
+        run: |
+          BUCKET=$(aws elasticbeanstalk create-storage-location \
+            --region "${{ vars.AWS_REGION }}" \
+            --query S3Bucket --output text)
+          KEY="taskflow/${GITHUB_SHA}-${GITHUB_RUN_NUMBER}.zip"
+          aws s3 cp taskflow-backend.zip "s3://${BUCKET}/${KEY}"
+          echo "bucket=${BUCKET}" >> "$GITHUB_OUTPUT"
+          echo "key=${KEY}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Elastic Beanstalk application version
+        run: |
+          VERSION_LABEL="taskflow-${GITHUB_SHA}-${GITHUB_RUN_NUMBER}"
+          aws elasticbeanstalk create-application-version \
+            --application-name taskflow \
+            --version-label "${VERSION_LABEL}" \
+            --description "GitHub Actions deployment ${GITHUB_SHA}" \
+            --source-bundle S3Bucket="${{ steps.upload.outputs.bucket }}",S3Key="${{ steps.upload.outputs.key }}" \
+            --process
+          echo "VERSION_LABEL=${VERSION_LABEL}" >> "$GITHUB_ENV"
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          aws elasticbeanstalk update-environment \
+            --application-name taskflow \
+            --environment-name Taskflow-env \
+            --version-label "${VERSION_LABEL}"
+
+      - name: Wait for deployment
+        run: |
+          aws elasticbeanstalk wait environment-updated \
+            --application-name taskflow \
+            --environment-names Taskflow-env
