@@ -24,7 +24,7 @@ def create_task(
 ) -> Task:
 
     # 1. Verify that the current user owns the project
-    verify_project_member(
+    verify_project_owner(
         db,
         project_id,
         current_user
@@ -128,7 +128,7 @@ def update_task_details(
 ) -> Task:
 
     # 1. Verify project ownership
-    verify_project_member(
+    verify_task_assignee_or_owner(
         db,
         project_id,
         current_user
@@ -199,7 +199,7 @@ def assign_task(
 ) -> tuple[Task, UUID | None]:
 
     # 1. Verify project ownership
-    verify_project_member(
+    verify_project_owner(
         db,
         project_id,
         current_user
@@ -362,7 +362,7 @@ def delete_task(
 ) -> UUID | None:
 
     # 1. Verify that the current user owns the project
-    verify_project_member(
+    verify_project_owner(
         db,
         project_id,
         current_user

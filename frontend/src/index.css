@@ -143,6 +143,31 @@ label {
 .split { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 1rem; }
 @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
 .panel { padding: 1.1rem; }
+.backlog-toolbar, .form-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
+.backlog-toolbar { margin-bottom: 0.9rem; }
+.backlog-toolbar h2 { margin: 0; }
+.create-task-panel { width: min(820px, 100%); }
+.form-actions { justify-content: flex-end; }
+.invite-candidates { margin-top: 1.4rem; }
+.invite-members-toggle { justify-self: start; }
+.invite-candidates > p { margin: 0; }
+.invite-candidate-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.6rem; }
+.invite-candidate-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem; background: white; border: 1px solid var(--line); border-radius: 12px; }
+.profile-link-button { padding: 0; border: 0; background: transparent; color: var(--accent-dark); font: inherit; font-weight: 600; text-align: left; text-decoration: underline; cursor: pointer; }
+.optional-profile-fields { border: 1px solid var(--line); border-radius: 12px; padding: 0.8rem; }
+.optional-profile-fields summary { cursor: pointer; font-weight: 600; }
+.optional-profile-fields > p { margin: 0.5rem 0 0.8rem; }
+.profile-panel { width: min(820px, 100%); }
+.profile-identity { padding-bottom: 0.6rem; border-bottom: 1px solid var(--line); }
+.profile-identity h2, .profile-identity h3 { margin: 0; }
+.profile-identity p { margin: 0.25rem 0 0; }
+.profile-success { padding: 0.7rem 0.9rem; background: #e8f4f2; color: var(--accent-dark); border-radius: 12px; }
+.user-profile-modal { width: min(700px, 100%); overscroll-behavior: contain; }
+.modal-backdrop:has(.user-profile-modal) { overscroll-behavior: contain; }
+.profile-details { display: grid; gap: 0.8rem; }
+.profile-detail-section { padding: 0.8rem; border: 1px solid var(--line); border-radius: 12px; background: white; }
+.profile-detail-section h4 { margin: 0 0 0.35rem; }
+.profile-detail-section p { margin: 0; white-space: pre-wrap; }
 .panel-header h2, .panel h2, .panel h3 { margin: 0 0 0.7rem; }
 
 .project-list, .activity-list, .member-list, .task-rows, .comment-list {
@@ -255,6 +280,11 @@ label {
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; }
 .modal-header h2 { margin: 0; }
+.join-request-modal { width: min(620px, 100%); }
+.join-request-card { display: grid; gap: 1rem; }
+.join-request-card h2 { margin: 0.15rem 0 0.6rem; }
+.join-request-card p { margin: 0.4rem 0; }
+.join-request-modal .join-request-card { box-shadow: none; border: 0; padding: 0; }
 
 .ws-dot {
   width: 9px;

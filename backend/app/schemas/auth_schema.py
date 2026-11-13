@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from uuid import UUID
 
 class UserPublicResponse(BaseModel):
@@ -9,10 +9,37 @@ class UserPublicResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserProfileResponse(UserPublicResponse):
+    education: str | None = None
+    skills: str | None = None
+    projects: str | None = None
+    experience: str | None = None
+
+
+class UserProfileUpdateRequest(BaseModel):
+    education: str | None = Field(default=None, max_length=4000)
+    skills: str | None = Field(default=None, max_length=4000)
+    projects: str | None = Field(default=None, max_length=6000)
+    experience: str | None = Field(default=None, max_length=6000)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("education", "skills", "projects", "experience")
+    @classmethod
+    def normalize_profile_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
 class RegisterRequest(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    education: str | None = Field(default=None, max_length=4000)
+    skills: str | None = Field(default=None, max_length=4000)
+    projects: str | None = Field(default=None, max_length=6000)
+    experience: str | None = Field(default=None, max_length=6000)
 
     @field_validator("name")
     @classmethod
@@ -37,6 +64,13 @@ class RegisterRequest(BaseModel):
             raise ValueError("Password must contain a digit")
 
         return value
+
+    @field_validator("education", "skills", "projects", "experience")
+    @classmethod
+    def normalize_profile_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class LoginRequest(BaseModel):

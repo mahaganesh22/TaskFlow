@@ -57,7 +57,11 @@ def register_user(
     user = User(
         name=user_data.name,
         email=user_data.email.lower(),
-        password_hash=hash_password(user_data.password)
+        password_hash=hash_password(user_data.password),
+        education=user_data.education,
+        skills=user_data.skills,
+        projects=user_data.projects,
+        experience=user_data.experience
     )
 
     try:

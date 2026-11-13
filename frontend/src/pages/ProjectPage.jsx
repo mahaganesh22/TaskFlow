@@ -2,21 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { deleteProject, getProject, transferOwnership, updateProject } from "../api/projects";
-import { createTask, listAllProjectTasks, listProjectTasks } from "../api/tasks";
-import { inviteMember, listMembers, removeMember } from "../api/members";
+import { listAllProjectTasks, listProjectTasks } from "../api/tasks";
+import { inviteMember, listInviteCandidates, listMembers, removeMember } from "../api/members";
 import { listActivities } from "../api/activities";
-import { fieldErrorsFromDetail, formatDetail } from "../api/client";
+import { formatDetail } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import useProjectWebSocket from "../hooks/useProjectWebSocket";
 import TaskModal from "../components/TaskModal";
+import UserProfileModal from "../components/UserProfileModal";
 import { PriorityBadge, StatusBadge } from "../components/StatusBadge";
-import {
-  ACTIVITY_LABELS,
-  formatDate,
-  formatDay,
-  fromDateTimeLocal,
-  memberName
-} from "../utils/format";
+import { ACTIVITY_LABELS, formatDate, formatDay, memberName } from "../utils/format";
 
 const COLUMNS = ["TODO", "IN_PROGRESS", "DONE"];
 
@@ -26,7 +21,7 @@ export default function ProjectPage() {
   const navigate = useNavigate();
   const { user, getAccessToken, refreshAccessToken } = useAuth();
 
-  const [tab, setTab] = useState("board");
+  const [tab, setTab] = useState(() => searchParams.get("tab") || "board");
   const [project, setProject] = useState(null);
   const [members, setMembers] = useState([]);
   const [boardTasks, setBoardTasks] = useState([]);
@@ -45,17 +40,14 @@ export default function ProjectPage() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [backlogLoading, setBacklogLoading] = useState(false);
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [taskPriority, setTaskPriority] = useState("MEDIUM");
-  const [dueDate, setDueDate] = useState("");
-  const [taskAssignee, setTaskAssignee] = useState("");
-  const [taskErrors, setTaskErrors] = useState({});
-  const [creating, setCreating] = useState(false);
 
-  const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState("");
-  const [inviting, setInviting] = useState(false);
+  const [inviteCandidates, setInviteCandidates] = useState([]);
+  const [inviteCandidatesLoading, setInviteCandidatesLoading] = useState(false);
+  const [showInviteCandidates, setShowInviteCandidates] = useState(false);
+  const [invitingUserId, setInvitingUserId] = useState("");
+  const [sentRequestIds, setSentRequestIds] = useState({});
+  const [profileUserId, setProfileUserId] = useState(null);
 
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
@@ -64,7 +56,6 @@ export default function ProjectPage() {
   const [newOwnerId, setNewOwnerId] = useState("");
   const [transferError, setTransferError] = useState("");
   const [transferring, setTransferring] = useState(false);
-  const [createError, setCreateError] = useState("");
 
   const selectedTaskId = searchParams.get("task");
   const isOwner = project && user && project.owner_id === user.id;
@@ -151,6 +142,17 @@ export default function ProjectPage() {
     }
   }, [tab, projectId, assigneeId, priority, appliedSearch, sortBy, sortOrder]);
 
+  useEffect(() => {
+    if (tab !== "members" || !isOwner || !showInviteCandidates) return;
+    let active = true;
+    setInviteCandidatesLoading(true);
+    listInviteCandidates(projectId)
+      .then((candidates) => { if (active) setInviteCandidates(candidates); })
+      .catch((err) => { if (active) setInviteError(formatDetail(err.detail) || "Could not load users"); })
+      .finally(() => { if (active) setInviteCandidatesLoading(false); });
+    return () => { active = false; };
+  }, [tab, projectId, isOwner, showInviteCandidates]);
+
   const tasksByStatus = useMemo(() => {
     const grouped = { TODO: [], IN_PROGRESS: [], DONE: [] };
     boardTasks.forEach((task) => {
@@ -158,51 +160,6 @@ export default function ProjectPage() {
     });
     return grouped;
   }, [boardTasks]);
-
-  async function handleCreateTask(event) {
-    event.preventDefault();
-    const nextErrors = {};
-
-    if (!title.trim()) nextErrors.title = "Task title cannot be empty";
-
-    if (dueDate) {
-      const due = new Date(dueDate);
-      if (due <= new Date()) {
-        nextErrors.due_date = "Due date cannot be in the past";
-      }
-    }
-
-    setTaskErrors(nextErrors);
-    setCreateError("");
-    if (Object.keys(nextErrors).length) return;
-
-    setCreating(true);
-
-    try {
-      await createTask(projectId, {
-        title: title.trim(),
-        description: description.trim() || null,
-        priority: taskPriority,
-        due_date: fromDateTimeLocal(dueDate),
-        assignee_id: taskAssignee || null
-      });
-      setTitle("");
-      setDescription("");
-      setDueDate("");
-      setTaskAssignee("");
-      setTaskPriority("MEDIUM");
-      await loadProjectData();
-      if (tab === "backlog") await loadBacklog(backlog.offset);
-    } catch (err) {
-      const fieldErrors = fieldErrorsFromDetail(err.detail);
-      setTaskErrors(fieldErrors);
-      if (!Object.keys(fieldErrors).length) {
-        setCreateError(formatDetail(err.detail) || "Could not create task");
-      }
-    } finally {
-      setCreating(false);
-    }
-  }
 
   async function handleSaveProject(event) {
     event.preventDefault();
@@ -251,26 +208,17 @@ export default function ProjectPage() {
     }
   }
 
-  async function handleInvite(event) {
-    event.preventDefault();
-
-    if (!inviteEmail.trim()) {
-      setInviteError("Email is required");
-      return;
-    }
-
+  async function handleInvite(candidate) {
     setInviteError("");
-    setInviting(true);
+    setInvitingUserId(candidate.id);
 
     try {
-      await inviteMember(projectId, inviteEmail.trim());
-      setInviteEmail("");
-      setMembers(await listMembers(projectId));
-      setActivities(await listActivities(projectId, { limit: 40 }));
+      await inviteMember(projectId, candidate.email);
+      setSentRequestIds((current) => ({ ...current, [candidate.id]: true }));
     } catch (err) {
       setInviteError(formatDetail(err.detail) || "Could not invite member");
     } finally {
-      setInviting(false);
+      setInvitingUserId("");
     }
   }
 
@@ -429,6 +377,10 @@ export default function ProjectPage() {
 
       {tab === "backlog" && (
         <section className="panel">
+          <div className="backlog-toolbar">
+            <h2>Backlog</h2>
+            <Link className="btn btn-primary" to={`/projects/${projectId}/tasks/new`}>Create task</Link>
+          </div>
           <div className="filters">
             <label>
               Sort by
@@ -505,7 +457,9 @@ export default function ProjectPage() {
             {members.map((member) => (
               <li key={member.id}>
                 <div>
-                  <strong>{member.user.name}</strong>
+                  {isOwner ? (
+                    <button type="button" className="profile-link-button" onClick={() => setProfileUserId(member.user_id)}>{member.user.name}</button>
+                  ) : <strong>{member.user.name}</strong>}
                   <div className="muted">{member.user.email} · {member.role}</div>
                 </div>
                 {isOwner && member.role !== "OWNER" && (
@@ -522,19 +476,50 @@ export default function ProjectPage() {
           </ul>
 
           {isOwner && (
-            <form className="stack compact" onSubmit={handleInvite}>
-              <h3>Invite by email</h3>
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                placeholder="member@example.com"
-              />
-              {inviteError && <span className="field-error">{inviteError}</span>}
-              <button className="btn btn-primary" type="submit" disabled={inviting}>
-                {inviting ? "Inviting…" : "Invite member"}
+            <div className="stack compact invite-candidates">
+              <button
+                className="btn btn-primary invite-members-toggle"
+                type="button"
+                aria-expanded={showInviteCandidates}
+                onClick={() => {
+                  setInviteError("");
+                  setShowInviteCandidates((shown) => !shown);
+                }}
+              >
+                {showInviteCandidates ? "Hide members" : "Invite members"}
               </button>
-            </form>
+              {showInviteCandidates && (
+                <div className="stack compact">
+                  <h3>Choose people to invite</h3>
+                  <p className="muted">They will receive a request to join your project.</p>
+                  {inviteError && <span className="field-error">{inviteError}</span>}
+                  {inviteCandidatesLoading ? (
+                    <p className="muted">Loading users…</p>
+                  ) : inviteCandidates.length === 0 ? (
+                    <p className="muted">There are no users available to invite right now.</p>
+                  ) : (
+                    <ul className="invite-candidate-list">
+                      {inviteCandidates.map((candidate) => (
+                        <li key={candidate.id}>
+                          <div>
+                        <button type="button" className="profile-link-button" onClick={() => setProfileUserId(candidate.id)}>{candidate.name}</button>
+                            <div className="muted">{candidate.email}</div>
+                          </div>
+                          <button
+                            className="btn btn-primary"
+                            type="button"
+                            disabled={Boolean(sentRequestIds[candidate.id]) || invitingUserId === candidate.id}
+                            onClick={() => handleInvite(candidate)}
+                          >
+                            {sentRequestIds[candidate.id] ? "Request sent" : invitingUserId === candidate.id ? "Sending…" : "Invite"}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </section>
       )}
@@ -615,59 +600,6 @@ export default function ProjectPage() {
         </section>
       )}
 
-      <section className="panel">
-        <h2>Create task</h2>
-        <form className="stack" onSubmit={handleCreateTask}>
-          {createError && <div className="alert">{createError}</div>}
-          <label>
-            Title
-            <input value={title} onChange={(event) => setTitle(event.target.value)} />
-            {taskErrors.title && <span className="field-error">{taskErrors.title}</span>}
-          </label>
-          <label>
-            Description
-            <textarea
-              rows={3}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </label>
-          <div className="form-row">
-            <label>
-              Priority
-              <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)}>
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-              </select>
-            </label>
-            <label>
-              Assignee
-              <select value={taskAssignee} onChange={(event) => setTaskAssignee(event.target.value)}>
-                <option value="">Unassigned</option>
-                {members.map((member) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    {member.user.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Due date
-              <input
-                type="datetime-local"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-              />
-              {taskErrors.due_date && <span className="field-error">{taskErrors.due_date}</span>}
-            </label>
-          </div>
-          <button className="btn btn-primary" type="submit" disabled={creating}>
-            {creating ? "Creating…" : "Add task"}
-          </button>
-        </form>
-      </section>
-
       {selectedTaskId && (
         <TaskModal
           projectId={projectId}
@@ -680,6 +612,14 @@ export default function ProjectPage() {
             loadProjectData();
             if (tab === "backlog") loadBacklog(backlog.offset);
           }}
+        />
+      )}
+
+      {profileUserId && (
+        <UserProfileModal
+          projectId={projectId}
+          userId={profileUserId}
+          onClose={() => setProfileUserId(null)}
         />
       )}
     </div>

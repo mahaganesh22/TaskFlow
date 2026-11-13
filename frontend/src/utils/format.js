@@ -16,6 +16,7 @@ export const ACTIVITY_LABELS = {
   TASK_ASSIGNED: "assigned a task",
   COMMENT_ADDED: "commented",
   MEMBER_INVITED: "invited a member",
+  MEMBER_JOINED: "joined the project team",
   MEMBER_REMOVED: "removed a member"
 };
 

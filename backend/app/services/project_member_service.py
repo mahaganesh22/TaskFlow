@@ -12,10 +12,12 @@ from app.models import (
     User,
     ProjectMember,
     ActivityLog,
-    Task
+    Task,
+    Project,
+    ProjectJoinRequest
 )
 
-from app.schemas.project_member_schema import ProjectMemberInviteRequest
+from app.schemas.project_member_schema import ProjectJoinRequestCreate
 
 from app.services.authorization_service import (
     verify_project_owner,
@@ -26,8 +28,8 @@ def invite_member(
     db: Session,
     project_id: UUID,
     current_user: User,
-    invite_data: ProjectMemberInviteRequest
-) -> ProjectMember:
+    invite_data: ProjectJoinRequestCreate
+) -> ProjectJoinRequest:
 
     # 1. Verify that the current user owns the project
     verify_project_owner(
@@ -52,7 +54,7 @@ def invite_member(
             detail="No active user found with this email"
         )
 
-    # 3. Prevent inviting an existing member
+    # Do not create a join request for someone who already belongs to the project.
     existing_membership = db.scalar(
         select(ProjectMember).where(
             ProjectMember.project_id == project_id,
@@ -66,46 +68,103 @@ def invite_member(
             detail="User is already a member of this project"
         )
 
+    join_request = db.scalar(
+        select(ProjectJoinRequest)
+        .where(
+            ProjectJoinRequest.project_id == project_id,
+            ProjectJoinRequest.user_id == invited_user.id
+        )
+        .with_for_update()
+    )
+    if join_request and join_request.status == "PENDING":
+        raise HTTPException(status_code=409, detail="A join request is already pending")
+    if join_request and join_request.status == "ACCEPTED":
+        raise HTTPException(status_code=409, detail="This user has already accepted the request")
+
     try:
-        # 4. Create the membership
-        membership = ProjectMember(
-            user_id=invited_user.id,
-            project_id=project_id,
-            role="MEMBER"
-        )
-
-        db.add(membership)
-
-        # 5. Flush to make sure the membership insert succeeds
-        db.flush()
-
-        # 6. Create activity log
-        activity = ActivityLog(
-            project_id=project_id,
-            actor_id=current_user.id,
-            activity_type="MEMBER_INVITED",
-            details={
-                "invited_user_id": str(invited_user.id)
-            }
-        )
-
-        db.add(activity)
-
-        # 7. Commit membership and activity together
+        if join_request:
+            join_request.status = "PENDING"
+            join_request.created_at = datetime.now(timezone.utc)
+            join_request.responded_at = None
+        else:
+            join_request = ProjectJoinRequest(
+                project_id=project_id,
+                user_id=invited_user.id,
+                status="PENDING"
+            )
+            db.add(join_request)
         db.commit()
-
-        db.refresh(membership)
-
-        return membership
-
+        db.refresh(join_request)
+        return join_request
     except IntegrityError:
         db.rollback()
+        raise HTTPException(status_code=409, detail="A join request already exists")
+    except Exception:
+        db.rollback()
+        raise
 
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User is already a member of this project"
+
+def get_my_join_requests(db: Session, current_user: User) -> list[ProjectJoinRequest]:
+    return list(db.scalars(
+        select(ProjectJoinRequest)
+        .join(ProjectJoinRequest.project)
+        .where(
+            ProjectJoinRequest.user_id == current_user.id,
+            ProjectJoinRequest.status == "PENDING"
         )
+        .options(
+            selectinload(ProjectJoinRequest.project).selectinload(Project.owner)
+        )
+        .order_by(ProjectJoinRequest.created_at.desc())
+    ).all())
 
+
+def respond_to_join_request(
+    db: Session,
+    request_id: UUID,
+    current_user: User,
+    action: str
+) -> ProjectJoinRequest:
+    join_request = db.scalar(
+        select(ProjectJoinRequest)
+        .where(ProjectJoinRequest.id == request_id)
+        .options(selectinload(ProjectJoinRequest.project).selectinload(Project.owner))
+        .with_for_update()
+    )
+    if join_request is None:
+        raise HTTPException(status_code=404, detail="Join request not found")
+    if join_request.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="This join request belongs to another user")
+    if join_request.status != "PENDING":
+        raise HTTPException(status_code=409, detail="This join request has already been answered")
+
+    try:
+        if action == "ACCEPT":
+            existing = db.scalar(select(ProjectMember).where(
+                ProjectMember.project_id == join_request.project_id,
+                ProjectMember.user_id == current_user.id
+            ))
+            if existing is None:
+                db.add(ProjectMember(
+                    project_id=join_request.project_id,
+                    user_id=current_user.id,
+                    role="MEMBER"
+                ))
+            join_request.status = "ACCEPTED"
+        else:
+            join_request.status = "REJECTED"
+        join_request.responded_at = datetime.now(timezone.utc)
+
+        if action == "ACCEPT":
+            db.add(ActivityLog(
+                project_id=join_request.project_id,
+                actor_id=current_user.id,
+                activity_type="MEMBER_JOINED",
+                details={"user_id": str(current_user.id)}
+            ))
+        db.commit()
+        db.refresh(join_request)
+        return join_request
     except Exception:
         db.rollback()
         raise
@@ -135,6 +194,31 @@ def get_project_members(
     ).all()
 
     return list(members)
+
+
+def get_invite_candidates(
+    db: Session,
+    project_id: UUID,
+    current_user: User
+) -> list[User]:
+    verify_project_owner(db, project_id, current_user)
+    existing_member_ids = select(ProjectMember.user_id).where(
+        ProjectMember.project_id == project_id
+    )
+    pending_user_ids = select(ProjectJoinRequest.user_id).where(
+        ProjectJoinRequest.project_id == project_id,
+        ProjectJoinRequest.status == "PENDING"
+    )
+    users = db.scalars(
+        select(User)
+        .where(
+            User.deleted_at.is_(None),
+            User.id.not_in(existing_member_ids),
+            User.id.not_in(pending_user_ids)
+        )
+        .order_by(User.name.asc(), User.email.asc())
+    ).all()
+    return list(users)
 
 
 def remove_project_member(

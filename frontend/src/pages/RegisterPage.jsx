@@ -19,6 +19,7 @@ export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [profile, setProfile] = useState({ education: "", skills: "", projects: "", experience: "" });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -44,7 +45,8 @@ export default function RegisterPage() {
       await register({
         name: name.trim(),
         email: email.trim(),
-        password
+        password,
+        ...Object.fromEntries(Object.entries(profile).map(([key, value]) => [key, value.trim() || null]))
       });
       navigate("/", { replace: true });
     } catch (error) {
@@ -98,6 +100,29 @@ export default function RegisterPage() {
             />
             {errors.password && <span className="field-error">{errors.password}</span>}
           </label>
+
+          <details className="optional-profile-fields">
+            <summary>Profile information (optional)</summary>
+            <p className="muted">Add details so project owners can learn about your background. You can also fill these in later.</p>
+            <div className="stack">
+              <label>
+                Education
+                <textarea rows={2} value={profile.education} onChange={(event) => setProfile((current) => ({ ...current, education: event.target.value }))} placeholder="Degree, school, or relevant coursework" />
+              </label>
+              <label>
+                Skills
+                <textarea rows={2} value={profile.skills} onChange={(event) => setProfile((current) => ({ ...current, skills: event.target.value }))} placeholder="Languages, tools, and areas of expertise" />
+              </label>
+              <label>
+                Projects
+                <textarea rows={2} value={profile.projects} onChange={(event) => setProfile((current) => ({ ...current, projects: event.target.value }))} placeholder="Projects you have worked on" />
+              </label>
+              <label>
+                Experience
+                <textarea rows={2} value={profile.experience} onChange={(event) => setProfile((current) => ({ ...current, experience: event.target.value }))} placeholder="Relevant work, volunteer, or team experience" />
+              </label>
+            </div>
+          </details>
 
           <button className="btn btn-primary" type="submit" disabled={submitting}>
             {submitting ? "Creating account…" : "Sign up"}

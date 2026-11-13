@@ -21,3 +21,34 @@ class ProjectMemberResponse(BaseModel):
     user: UserPublicResponse
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectJoinRequestCreate(BaseModel):
+    email: EmailStr
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProjectJoinRequestAction(BaseModel):
+    action: Literal["ACCEPT", "REJECT"]
+
+
+class JoinRequestProjectResponse(BaseModel):
+    id: UUID
+    name: str
+    description: str | None
+    owner: UserPublicResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectJoinRequestResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    user_id: UUID
+    status: Literal["PENDING", "ACCEPTED", "REJECTED"]
+    created_at: datetime
+    responded_at: datetime | None
+    project: JoinRequestProjectResponse
+
+    model_config = ConfigDict(from_attributes=True)

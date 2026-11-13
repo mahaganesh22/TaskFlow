@@ -26,6 +26,7 @@ class ActivityLog(Base):
                 'TASK_ASSIGNED',
                 'COMMENT_ADDED',
                 'MEMBER_INVITED',
+                'MEMBER_JOINED',
                 'MEMBER_REMOVED'
             )
             """,
