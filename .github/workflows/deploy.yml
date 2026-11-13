@@ -57,7 +57,7 @@ jobs:
 
       - name: Create Elastic Beanstalk application version
         run: |
-          VERSION_LABEL="taskflow-${GITHUB_SHA}-${GITHUB_RUN_NUMBER}"
+          VERSION_LABEL="taskflow-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           aws elasticbeanstalk create-application-version \
             --application-name taskflow \
             --version-label "${VERSION_LABEL}" \
