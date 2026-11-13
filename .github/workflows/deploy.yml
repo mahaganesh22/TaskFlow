@@ -23,6 +23,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Inspect GitHub OIDC claims (safe diagnostics)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const payload = token.split('.')[1];
+            const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+            core.info(JSON.stringify({ iss: claims.iss, aud: claims.aud, sub: claims.sub }, null, 2));
+
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
