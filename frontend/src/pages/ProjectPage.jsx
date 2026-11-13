@@ -51,6 +51,7 @@ export default function ProjectPage() {
 
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
+  const [projectTechStack, setProjectTechStack] = useState("");
   const [projectError, setProjectError] = useState("");
   const [savingProject, setSavingProject] = useState(false);
   const [newOwnerId, setNewOwnerId] = useState("");
@@ -95,6 +96,7 @@ export default function ProjectPage() {
       setProject(nextProject);
       setProjectName(nextProject.name);
       setProjectDescription(nextProject.description || "");
+      setProjectTechStack(nextProject.tech_stack || "");
       setMembers(nextMembers);
       setBoardTasks(nextTasks);
       setActivities(nextActivities);
@@ -175,7 +177,8 @@ export default function ProjectPage() {
     try {
       const updated = await updateProject(projectId, {
         name: projectName.trim(),
-        description: projectDescription.trim() || null
+        description: projectDescription.trim() || null,
+        tech_stack: projectTechStack.trim() || null
       });
       setProject(updated);
     } catch (err) {
@@ -303,7 +306,7 @@ export default function ProjectPage() {
             className={tab === item ? "tab active" : "tab"}
             onClick={() => setTab(item)}
           >
-            {item}
+            {item === "settings" ? "Details" : item}
           </button>
         ))}
       </div>
@@ -562,6 +565,14 @@ export default function ProjectPage() {
                     rows={3}
                     value={projectDescription}
                     onChange={(event) => setProjectDescription(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Tech stack
+                  <input
+                    value={projectTechStack}
+                    onChange={(event) => setProjectTechStack(event.target.value)}
+                    placeholder="e.g. React, FastAPI, PostgreSQL"
                   />
                 </label>
                 {projectError && <span className="field-error">{projectError}</span>}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 
-import { listProjects, createProject } from "../api/projects";
+import { listProjects } from "../api/projects";
 import { listAssignedTasks, listAllProjectTasks } from "../api/tasks";
 import { listActivities } from "../api/activities";
 import { formatDetail } from "../api/client";
@@ -15,10 +15,6 @@ export default function DashboardPage() {
   const [assigned, setAssigned] = useState([]);
   const [openCounts, setOpenCounts] = useState({});
   const [activities, setActivities] = useState([]);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [nameError, setNameError] = useState("");
-  const [creating, setCreating] = useState(false);
 
   async function loadDashboard({ silent = false } = {}) {
     if (!silent) setLoading(true);
@@ -85,32 +81,6 @@ export default function DashboardPage() {
     return { byStatus, completedThisWeek, busiest };
   }, [assigned, projects, openCounts]);
 
-  async function handleCreate(event) {
-    event.preventDefault();
-
-    if (!name.trim()) {
-      setNameError("Project name cannot be empty");
-      return;
-    }
-
-    setNameError("");
-    setCreating(true);
-
-    try {
-      await createProject({
-        name: name.trim(),
-        description: description.trim() || null
-      });
-      setName("");
-      setDescription("");
-      await loadDashboard();
-    } catch (err) {
-      setNameError(formatDetail(err.detail) || "Could not create project");
-    } finally {
-      setCreating(false);
-    }
-  }
-
   if (loading) {
     return <div className="page-status">Loading dashboard…</div>;
   }
@@ -133,6 +103,7 @@ export default function DashboardPage() {
           <p className="eyebrow">Overview</p>
           <h1>Dashboard</h1>
         </div>
+        <Link className="btn btn-primary" to="/projects/new">Create project</Link>
       </div>
 
       <section className="stat-grid">
@@ -183,25 +154,6 @@ export default function DashboardPage() {
             </ul>
           )}
 
-          <form className="stack compact" onSubmit={handleCreate}>
-            <h3>New project</h3>
-            <label>
-              Name
-              <input value={name} onChange={(event) => setName(event.target.value)} />
-              {nameError && <span className="field-error">{nameError}</span>}
-            </label>
-            <label>
-              Description
-              <textarea
-                rows={3}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-              />
-            </label>
-            <button className="btn btn-primary" type="submit" disabled={creating}>
-              {creating ? "Creating…" : "Create project"}
-            </button>
-          </form>
         </section>
 
         <section className="panel">

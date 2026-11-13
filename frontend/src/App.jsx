@@ -12,6 +12,7 @@ import ProjectPage from "./pages/ProjectPage";
 import CreateTaskPage from "./pages/CreateTaskPage";
 import JoinRequestsPage from "./pages/JoinRequestsPage";
 import ProfilePage from "./pages/ProfilePage";
+import CreateProjectPage from "./pages/CreateProjectPage";
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/assigned" element={<AssignedPage />} />
             <Route path="/join-requests" element={<JoinRequestsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/projects/new" element={<CreateProjectPage />} />
             <Route path="/projects/:projectId/tasks/new" element={<CreateTaskPage />} />
             <Route path="/projects/:projectId" element={<ProjectPage />} />
           </Route>

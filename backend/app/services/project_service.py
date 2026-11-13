@@ -134,6 +134,7 @@ def create_project(
         project = Project(
             name=project_data.name,
             description=project_data.description,
+            tech_stack=project_data.tech_stack,
             owner_id=current_user.id
         )
 
