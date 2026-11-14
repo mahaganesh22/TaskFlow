@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.core.dependencies import get_current_user
 
-from app.models import User
+from app.models import Project, User
 
 from app.services import task_service
 
@@ -250,6 +250,25 @@ def update_task_status(
                     "type": "ASSIGNED_TASKS_CHANGED",
                     "project_id": str(project_id),
                     "task_id": str(task.id)
+                }
+            )
+
+        project = db.get(Project, project_id)
+        if (
+            task.status == "DONE"
+            and project is not None
+            and current_user.id != project.owner_id
+            and task.assignee_id == current_user.id
+        ):
+            background_tasks.add_task(
+                manager.send_to_user,
+                project.owner_id,
+                {
+                    "type": "TASK_COMPLETED",
+                    "project_id": str(project_id),
+                    "task_id": str(task.id),
+                    "task_title": task.title,
+                    "actor_name": current_user.name,
                 }
             )
 

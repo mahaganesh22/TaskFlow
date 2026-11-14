@@ -11,6 +11,8 @@ export default function AppLayout() {
   const { user, logout, deleteAccount, getAccessToken, refreshAccessToken } = useAuth();
   const [liveTick, setLiveTick] = useState(0);
   const [liveNotice, setLiveNotice] = useState("");
+  const [liveNoticeHref, setLiveNoticeHref] = useState("");
+  const [liveNoticeType, setLiveNoticeType] = useState("");
   const [accountError, setAccountError] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [joinRequests, setJoinRequests] = useState([]);
@@ -82,15 +84,27 @@ export default function AppLayout() {
 
       if (message.type === "ASSIGNED_TASKS_CHANGED") {
         setLiveNotice("Assigned to me was updated");
+        setLiveNoticeHref("/assigned");
+        setLiveNoticeType("");
+      } else if (message.type === "TASK_COMPLETED") {
+        setLiveNotice(`${message.actor_name} completed: ${message.task_title}`);
+        setLiveNoticeHref(`/projects/${message.project_id}?tab=board&task=${message.task_id}`);
+        setLiveNoticeType("success");
       } else if (message.type === "PROJECT_JOIN_REQUESTED") {
         setLiveNotice("A project owner invited you to join their team");
+        setLiveNoticeHref("/join-requests");
+        setLiveNoticeType("");
         refreshJoinRequests(message.request_id);
       } else if (message.type === "PROJECT_JOIN_REQUEST_RESPONDED") {
         refreshJoinRequests();
       } else if (message.type === "MEMBER_INVITED") {
         setLiveNotice("You were added to a project");
+        setLiveNoticeHref("/");
+        setLiveNoticeType("");
       } else if (message.type === "MEMBER_REMOVED") {
         setLiveNotice("A project membership changed");
+        setLiveNoticeHref("/");
+        setLiveNoticeType("");
       }
     }
   });
@@ -138,10 +152,10 @@ export default function AppLayout() {
       )}
 
       {liveNotice && (
-        <div className="live-banner" role="status">
+        <div className={`live-banner ${liveNoticeType === "success" ? "live-banner-success" : ""}`} role="status">
           <span>{liveNotice}</span>
-          <Link to="/join-requests" onClick={() => setLiveNotice("")}>View notifications</Link>
-          <button type="button" onClick={() => setLiveNotice("")}>
+          <Link to={liveNoticeHref || "/join-requests"} onClick={() => { setLiveNotice(""); setLiveNoticeHref(""); setLiveNoticeType(""); }}>View</Link>
+          <button type="button" onClick={() => { setLiveNotice(""); setLiveNoticeHref(""); setLiveNoticeType(""); }}>
             Dismiss
           </button>
         </div>

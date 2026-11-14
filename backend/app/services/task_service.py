@@ -127,14 +127,8 @@ def update_task_details(
     task_data: TaskUpdateRequest
 ) -> Task:
 
-    # 1. Verify project ownership
-    verify_task_assignee_or_owner(
-        db,
-        project_id,
-        current_user
-    )
-
-    # 2. Retrieve the task belonging to this project
+    # 1. Retrieve the task belonging to this project before checking its
+    # assignee or project owner. The authorization helper needs the Task row.
     task = db.scalar(
         select(Task)
         .where(
@@ -149,6 +143,9 @@ def update_task_details(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Task not found"
         )
+
+    # 2. Allow only the project owner or this task's assignee to edit details.
+    verify_task_assignee_or_owner(db, task, current_user)
 
     # 3. Identify fields explicitly provided by the client
     updates = task_data.model_dump(exclude_unset=True)

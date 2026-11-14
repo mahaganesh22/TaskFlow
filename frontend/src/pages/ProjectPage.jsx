@@ -363,7 +363,12 @@ export default function ProjectPage() {
                     key={task.id}
                     onClick={() => openTask(task.id)}
                   >
-                    <strong>{task.title}</strong>
+                    <span className="task-card-heading">
+                      <strong>{task.title}</strong>
+                      {task.status === "DONE" && (
+                        <span className="task-card-complete" role="img" aria-label="Completed">✓</span>
+                      )}
+                    </span>
                     <div className="row-badges">
                       <PriorityBadge priority={task.priority} />
                     </div>

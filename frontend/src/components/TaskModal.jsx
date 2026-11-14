@@ -32,10 +32,13 @@ export default function TaskModal({
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("MEDIUM");
   const [dueDate, setDueDate] = useState("");
+  const [editAssigneeId, setEditAssigneeId] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [comment, setComment] = useState("");
   const [commentError, setCommentError] = useState("");
   const [commenting, setCommenting] = useState(false);
+  const [showCommentDialog, setShowCommentDialog] = useState(false);
   const [statusError, setStatusError] = useState("");
   const [assignError, setAssignError] = useState("");
 
@@ -53,6 +56,7 @@ export default function TaskModal({
       setDescription(nextTask.description || "");
       setPriority(nextTask.priority);
       setDueDate(toDateTimeLocal(nextTask.due_date));
+      setEditAssigneeId(nextTask.assignee_id || "");
       setComments(nextComments);
     } catch (err) {
       setError(formatDetail(err.detail) || "Could not load this task");
@@ -64,6 +68,15 @@ export default function TaskModal({
   useEffect(() => {
     load();
   }, [projectId, taskId]);
+
+  useEffect(() => {
+    if (!showCommentDialog) return undefined;
+    function handleEscape(event) {
+      if (event.key === "Escape" && !commenting) setShowCommentDialog(false);
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [showCommentDialog, commenting]);
 
   async function handleSave(event) {
     event.preventDefault();
@@ -83,6 +96,19 @@ export default function TaskModal({
         priority,
         due_date: fromDateTimeLocal(dueDate)
       });
+
+      if (isOwner && editAssigneeId && editAssigneeId !== (task.assignee_id || "")) {
+        try {
+          await assignTask(projectId, taskId, editAssigneeId);
+        } catch (err) {
+          await load();
+          setAssignError(formatDetail(err.detail) || "Could not update assignee");
+          return;
+        }
+      }
+
+      setAssignError("");
+      setIsEditing(false);
       onChanged();
       await load();
     } catch (err) {
@@ -98,9 +124,9 @@ export default function TaskModal({
     setSaving(true);
 
     try {
-      await updateTaskStatus(projectId, taskId, nextStatus);
+      const updatedTask = await updateTaskStatus(projectId, taskId, nextStatus);
+      setTask(updatedTask);
       onChanged();
-      await load();
     } catch (err) {
       setStatusError(formatDetail(err.detail) || "Could not update status");
     } finally {
@@ -108,22 +134,28 @@ export default function TaskModal({
     }
   }
 
-  async function handleAssign(event) {
-    const assigneeId = event.target.value;
-    if (!assigneeId) return;
-
+  function beginEditing() {
+    setTitle(task.title);
+    setDescription(task.description || "");
+    setPriority(task.priority);
+    setDueDate(toDateTimeLocal(task.due_date));
+    setEditAssigneeId(task.assignee_id || "");
+    setFieldErrors({});
     setAssignError("");
-    setSaving(true);
+    setError("");
+    setIsEditing(true);
+  }
 
-    try {
-      await assignTask(projectId, taskId, assigneeId);
-      onChanged();
-      await load();
-    } catch (err) {
-      setAssignError(formatDetail(err.detail) || "Could not assign task");
-    } finally {
-      setSaving(false);
-    }
+  function cancelEditing() {
+    setTitle(task.title);
+    setDescription(task.description || "");
+    setPriority(task.priority);
+    setDueDate(toDateTimeLocal(task.due_date));
+    setEditAssigneeId(task.assignee_id || "");
+    setFieldErrors({});
+    setAssignError("");
+    setError("");
+    setIsEditing(false);
   }
 
   async function handleDelete() {
@@ -157,6 +189,7 @@ export default function TaskModal({
       setComment("");
       onChanged();
       setComments(await listComments(projectId, taskId));
+      setShowCommentDialog(false);
     } catch (err) {
       setCommentError(formatDetail(err.detail) || "Could not add comment");
     } finally {
@@ -165,132 +198,204 @@ export default function TaskModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Task details</h2>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Close
-          </button>
-        </div>
+    <div className="modal-backdrop task-modal-backdrop" onClick={onClose}>
+      <section
+        className="modal task-detail-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-detail-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="task-detail-header">
+          <div>
+            <p className="eyebrow">{isEditing ? "Editing task" : "Task details"}</p>
+            <h2 id="task-detail-title">{isEditing ? title || "Task" : task?.title || "Task"}</h2>
+          </div>
+          <div className="task-header-actions">
+            {task && !isEditing && (isOwner || task.assignee_id === currentUserId) && <button type="button" className="btn task-edit-button" onClick={beginEditing}>Edit</button>}
+            <button type="button" className="icon-button" aria-label="Close task details" onClick={onClose}>×</button>
+          </div>
+        </header>
 
         {loading && <div className="page-status">Loading task…</div>}
-        {!loading && error && <div className="alert">{error}</div>}
+        {!loading && error && <div className="alert" role="alert">{error}</div>}
 
         {!loading && task && (
           <>
-            <div className="row-badges">
-              <StatusBadge status={task.status} />
-              <PriorityBadge priority={task.priority} />
+            <div className="task-detail-summary">
+              <div className="task-detail-badges">
+                <StatusBadge status={task.status} />
+                <PriorityBadge priority={task.priority} />
+                {task.status === "DONE" && (
+                  <span className="completion-label"><span aria-hidden="true">✓</span> Completed</span>
+                )}
+              </div>
+              <div className="task-detail-status">
+                <span className="field-caption">Update status</span>
+                <div className="status-actions" role="group" aria-label="Update task status">
+                  {STATUSES.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`status-choice ${task.status === item ? "selected" : ""} ${item === "DONE" ? "done-choice" : ""}`}
+                      aria-pressed={task.status === item}
+                      disabled={
+                        saving ||
+                        task.status === item ||
+                        (!isOwner && task.assignee_id !== currentUserId)
+                      }
+                      onClick={() => handleStatus(item)}
+                    >
+                      {item === "DONE" && <span aria-hidden="true">✓</span>}
+                      {item.replace("_", " ")}
+                    </button>
+                  ))}
+                </div>
+                {statusError && <p className="field-error" role="alert">{statusError}</p>}
+              </div>
             </div>
 
-            <div className="status-actions">
-              {STATUSES.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className="btn"
-                  disabled={
-                    saving ||
-                    task.status === item ||
-                    (!isOwner && task.assignee_id !== currentUserId)
-                  }
-                  onClick={() => handleStatus(item)}
-                >
-                  {item === "DONE" ? "Mark Done" : `Move to ${item.replace("_", " ")}`}
-                </button>
-              ))}
-            </div>
-            {statusError && <p className="field-error">{statusError}</p>}
-
-            <form className="stack" onSubmit={handleSave}>
-              <label>
-                Title
-                <input value={title} onChange={(event) => setTitle(event.target.value)} />
-                {fieldErrors.title && <span className="field-error">{fieldErrors.title}</span>}
-              </label>
-              <label>
-                Description
-                <textarea
-                  rows={4}
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                />
-              </label>
-              <div className="form-row">
+            <form className="task-edit-form" onSubmit={handleSave}>
+              <section className="task-form-section">
+                <div className="section-heading">
+                  <div><h3>Overview</h3><p className="muted">Keep the task details and priority up to date.</p></div>
+                </div>
                 <label>
-                  Priority
-                  <select value={priority} onChange={(event) => setPriority(event.target.value)}>
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                  </select>
+                  Task name
+                  {isEditing ? (
+                    <input value={title} onChange={(event) => setTitle(event.target.value)} />
+                  ) : (
+                    <div className="task-read-value">{task.title}</div>
+                  )}
+                  {fieldErrors.title && <span className="field-error">{fieldErrors.title}</span>}
                 </label>
                 <label>
-                  Due date
-                  <input
-                    type="datetime-local"
-                    value={dueDate}
-                    onChange={(event) => setDueDate(event.target.value)}
-                  />
-                  {fieldErrors.due_date && (
-                    <span className="field-error">{fieldErrors.due_date}</span>
+                  Description
+                  {isEditing ? (
+                    <textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add context or acceptance criteria" />
+                  ) : (
+                    <div className="task-read-value description-value">{task.description || <span className="muted">No description provided.</span>}</div>
                   )}
                 </label>
-              </div>
-              <button className="btn btn-primary" type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save changes"}
-              </button>
+                {isEditing ? (
+                  <div className="form-row">
+                    <label>
+                      Priority
+                      <select value={priority} onChange={(event) => setPriority(event.target.value)}>
+                        <option value="LOW">Low</option>
+                        <option value="MEDIUM">Medium</option>
+                        <option value="HIGH">High</option>
+                      </select>
+                    </label>
+                    <label>
+                      Due date
+                      <input type="datetime-local" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+                      {fieldErrors.due_date && <span className="field-error">{fieldErrors.due_date}</span>}
+                    </label>
+                  </div>
+                ) : (
+                  <div className="task-read-grid">
+                    <div><span className="field-caption">Priority</span><PriorityBadge priority={task.priority} /></div>
+                    <div><span className="field-caption">Due date</span><span>{task.due_date ? formatDate(task.due_date) : "No due date"}</span></div>
+                  </div>
+                )}
+              </section>
+
+              <section className="task-form-section task-assignee-section">
+                <div className="section-heading">
+                  <div><h3>Ownership</h3><p className="muted">Choose the teammate responsible for this work.</p></div>
+                </div>
+                <label>
+                  Assignee
+                  {isEditing && isOwner ? (
+                    <select value={editAssigneeId} onChange={(event) => setEditAssigneeId(event.target.value)} disabled={saving}>
+                      <option value="" disabled>Unassigned</option>
+                      {members.map((member) => (
+                        <option key={member.user_id} value={member.user_id}>{member.user.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="task-read-value">{members.find((member) => member.user_id === task.assignee_id)?.user.name || "Unassigned"}</div>
+                  )}
+                  {assignError && <span className="field-error" role="alert">{assignError}</span>}
+                </label>
+                {!isOwner && task.assignee_id !== currentUserId && (
+                  <p className="muted">Only the assignee or project owner can update this task.</p>
+                )}
+              </section>
+
+              <footer className="task-detail-footer">
+                <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving || !isOwner}>Delete task</button>
+                {isEditing && (
+                  <div className="task-edit-actions">
+                    <button type="button" className="btn btn-ghost" onClick={cancelEditing} disabled={saving}>Cancel</button>
+                    <button className="btn btn-primary" type="submit" disabled={saving}>
+                      {saving ? "Saving…" : "Save changes"}
+                    </button>
+                  </div>
+                )}
+              </footer>
             </form>
 
-            <label>
-              Assignee
-              <select value={task.assignee_id || ""} onChange={handleAssign} disabled={saving}>
-                {!task.assignee_id && <option value="">Unassigned</option>}
-                {members.map((member) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    {member.user.name}
-                  </option>
-                ))}
-              </select>
-              {assignError && <span className="field-error">{assignError}</span>}
-            </label>
-            {!isOwner && task.assignee_id !== currentUserId && (
-              <p className="muted">Only the assignee or owner can mark this task Done.</p>
-            )}
-
-            <section>
-              <h3>Comments</h3>
-              {comments.length === 0 && <p className="muted">No comments yet.</p>}
-              <ul className="comment-list">
-                {comments.map((item) => (
-                  <li key={item.id}>
-                    <strong>{item.author_name}</strong>
-                    <span className="muted"> · {formatDate(item.created_at)}</span>
-                    <p>{item.content}</p>
-                  </li>
-                ))}
-              </ul>
-              <form className="stack compact" onSubmit={handleComment}>
-                <textarea
-                  rows={3}
-                  value={comment}
-                  onChange={(event) => setComment(event.target.value)}
-                  placeholder="Write a comment"
-                />
-                {commentError && <span className="field-error">{commentError}</span>}
-                <button className="btn btn-primary" type="submit" disabled={commenting}>
-                  {commenting ? "Posting…" : "Add comment"}
-                </button>
-              </form>
+            <section className="task-comments-section">
+              <div className="section-heading comments-heading">
+                <div><h3>Discussion <span className="comment-count">{comments.length}</span></h3><p className="muted">Keep decisions and updates with the task.</p></div>
+                <button type="button" className="btn comment-open-button" onClick={() => { setCommentError(""); setShowCommentDialog(true); }}>Comment</button>
+              </div>
+              {comments.length === 0 ? (
+                <div className="comment-empty-state">No discussion yet. Add the first comment to keep everyone in sync.</div>
+              ) : (
+                <ul className="comment-list">
+                  {comments.map((item) => (
+                    <li key={item.id}>
+                      <div className="comment-meta"><strong>{item.author_name}</strong><span>{formatDate(item.created_at)}</span></div>
+                      <p>{item.content}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
-
-            <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving}>
-              Delete task
-            </button>
           </>
         )}
-      </div>
+      </section>
+
+      {showCommentDialog && (
+        <div className="modal-backdrop comment-dialog-backdrop" onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget && !commenting) setShowCommentDialog(false); }}>
+          <section
+            className="modal comment-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="comment-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="task-detail-header">
+              <div><p className="eyebrow">Task discussion</p><h2 id="comment-dialog-title">Add a comment</h2></div>
+              <button type="button" className="icon-button" aria-label="Close comment dialog" disabled={commenting} onClick={() => setShowCommentDialog(false)}>×</button>
+            </header>
+            <p className="muted comment-context">Posting to <strong>{task?.title}</strong></p>
+            <form className="stack" onSubmit={handleComment}>
+              <label htmlFor="task-comment">Your comment</label>
+              <textarea
+                id="task-comment"
+                rows={5}
+                autoFocus
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                placeholder="Share an update, question, or decision…"
+                maxLength={5000}
+              />
+              <div className="comment-dialog-footer">
+                {commentError && <span className="field-error" role="alert">{commentError}</span>}
+                <span className="muted comment-character-count">{comment.length}/5000</span>
+                <button type="button" className="btn btn-ghost" disabled={commenting} onClick={() => setShowCommentDialog(false)}>Cancel</button>
+                <button className="btn btn-primary" type="submit" disabled={commenting || !comment.trim()}>
+                  {commenting ? "Posting…" : "Post comment"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
